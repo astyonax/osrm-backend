@@ -385,15 +385,17 @@ function way_function (way)
   MaxSpeed.limit( way, maxspeed, maxspeed_forward, maxspeed_backward )
 
 	-- query PostGIS for information about the way
+  -- expects data to be imported using oms2pgsql, with the ibikecph configuration
 	local sql_query = " " ..
-		"SELECT SUM(SQRT(area.area)) AS val " ..
-		"FROM planet_osm_ways way " ..
-		"LEFT JOIN planet_osm_polygon area ON ST_DWithin(way.geometry, area.geometry, 20) " ..
-		"WHERE area.type IN ('park') AND way.osm_id=" .. way.id .. " " ..
-		"GROUP BY way.id " ..
-		"LIMIT 1"
-	
-	local cursor = assert( sql_con:execute(sql_query) )
+    "SELECT SUM(SQRT(area.way_area)) AS val " ..
+    "FROM planet_osm_line way " ..
+    "LEFT JOIN planet_osm_polygon area ON ST_DWithin(way.way, area.way, 20) " ..
+    "WHERE area.area IN ('park') AND way.osm_id=" .. way.id .. " " ..
+    "GROUP BY way.osm_id " ..
+    "LIMIT 1; " ..
+    ""
+
+  local cursor = assert( sql_con:execute(sql_query) )
 	local row = cursor:fetch( {}, "a" )
 	if row then
 	  local val = tonumber(row.val)
