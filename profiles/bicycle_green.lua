@@ -22,19 +22,19 @@ walking_speed = 6
 
 bicycle_speeds = {
   ["cycleway"] = default_speed,
-  ["primary"] = default_speed,
-  ["primary_link"] = default_speed,
-  ["secondary"] = default_speed,
-  ["secondary_link"] = default_speed,
-  ["tertiary"] = default_speed,
-  ["tertiary_link"] = default_speed,
+  ["primary"] = default_speed * 0.5,
+  ["primary_link"] = default_speed * 0.5,
+  ["secondary"] = default_speed * 0.6,
+  ["secondary_link"] = default_speed * 0.6,
+  ["tertiary"] = default_speed * 0.7,
+  ["tertiary_link"] = default_speed * 0.7,
   ["residential"] = default_speed,
   ["unclassified"] = default_speed,
   ["living_street"] = default_speed,
   ["road"] = default_speed,
   ["service"] = default_speed,
-  ["track"] = 12,
-  ["path"] = 12
+  ["track"] = default_speed,
+  ["path"] = default_speed
   --["footway"] = 12,
   --["pedestrian"] = 12,
 }
@@ -98,7 +98,7 @@ ignore_areas      = true    -- future feature
 traffic_signal_penalty  = 5
 u_turn_penalty      = 20
 use_turn_restrictions   = false
-turn_penalty      = 60
+turn_penalty      = 120
 turn_bias         = 1.4
 
 
@@ -352,13 +352,13 @@ function way_function (way)
   end
 
   -- cycleways
-  if cycleway and cycleway_tags[cycleway] then
-    way.forward_speed = bicycle_speeds["cycleway"]
-  elseif cycleway_left and cycleway_tags[cycleway_left] then
-    way.forward_speed = bicycle_speeds["cycleway"]
-  elseif cycleway_right and cycleway_tags[cycleway_right] then
-    way.forward_speed = bicycle_speeds["cycleway"]
-  end
+  --if cycleway and cycleway_tags[cycleway] then
+  --  way.forward_speed = bicycle_speeds["cycleway"]
+  --elseif cycleway_left and cycleway_tags[cycleway_left] then
+  --  way.forward_speed = bicycle_speeds["cycleway"]
+  --elseif cycleway_right and cycleway_tags[cycleway_right] then
+  --  way.forward_speed = bicycle_speeds["cycleway"]
+  --end
 
   -- dismount
   if bicycle == "dismount" then
@@ -384,26 +384,52 @@ function way_function (way)
   -- maxspeed
   MaxSpeed.limit( way, maxspeed, maxspeed_forward, maxspeed_backward )
 
-	-- query PostGIS for information about the way
-  -- expects data to be imported using oms2pgsql, with the ibikecph configuration
-	local sql_query = " " ..
-    "SELECT SUM(SQRT(area.way_area)) AS val " ..
-    "FROM planet_osm_line way " ..
-    "LEFT JOIN planet_osm_polygon area ON ST_DWithin(way.way, area.way, 20) " ..
-    "WHERE area.area IN ('park') AND way.osm_id=" .. way.id .. " " ..
-    "GROUP BY way.osm_id " ..
-    "LIMIT 1; " ..
-    ""
+  local score = nil
+  if way.forward_mode == mode_normal or way.backward_mode == mode_normal then
+  	-- query PostGIS for information about the way
+    -- expects data to be imported using oms2pgsql, with the ibikecph configuration
+  	local sql_query = "" ..
+      "SELECT " ..
+      "  SUM(  " ..
+      "    ST_Length(  " ..
+      "      ST_Intersection( way.way, ST_Buffer(area.way, 20) )  " ..
+      "    ) * area.green_score  " ..
+      "  ) / ST_Length( way.way ) AS score " ..
+      "FROM planet_osm_line AS way " ..
+      "LEFT JOIN " ..
+      "  (SELECT " ..
+      "    way, " ..
+      "    osm_id, " ..
+      "    way_area, " ..
+      "    green_score " ..
+      "  FROM planet_osm_polygon) area " ..
+      "ON ST_DWithin( way.way, area.way, 20 ) AND area.green_score>1 " ..
+      "WHERE way.osm_id = " .. way.id ..  " "..
+      "GROUP BY way.osm_id, way.way;"
 
-  local cursor = assert( sql_con:execute(sql_query) )
-	local row = cursor:fetch( {}, "a" )
-	if row then
-	  local val = tonumber(row.val)
-	  if val > 10 then
-	    way.forward_speed = way.forward_speed / math.log10( val )
-	    way.backward_speed = way.backward_speed / math.log10( val )
-	  end
-	end
+
+    local cursor = assert( sql_con:execute(sql_query) )
+  	local row = cursor:fetch( {}, "a" )
+  	if row then
+      score = tonumber(row.score)
+  	  if nil ~= score and score>1 then
+        score = score * 3
+        if way.forward_mode == mode_normal then
+          way.forward_speed = way.forward_speed * score
+        end
+        if way.backward_mode == mode_normal then
+          way.backward_speed = way.backward_speed * score
+        end
+      end
+  	end
+  end
+  -- for debugging, write the score back to postgis
+  if score == nil then
+    score = 'NULL'
+  end
+  local update_query = "UPDATE planet_osm_line SET osrm_speed = " .. score .. " WHERE osm_id = " .. way.id .. ";"
+  sql_con:execute(update_query)
+  
 end
 
 function turn_function (angle)
