@@ -17,17 +17,16 @@ service_tag_restricted = { ["parking_aisle"] = true }
 restriction_exception_tags = { "bicycle", "vehicle", "access" }
 
 default_speed = 15
-
 walking_speed = 6
 
 bicycle_speeds = {
   ["cycleway"] = default_speed,
-  ["primary"] = default_speed * 0.5,
-  ["primary_link"] = default_speed * 0.5,
-  ["secondary"] = default_speed * 0.6,
-  ["secondary_link"] = default_speed * 0.6,
-  ["tertiary"] = default_speed * 0.7,
-  ["tertiary_link"] = default_speed * 0.7,
+  ["primary"] = default_speed * 0.4,
+  ["primary_link"] = default_speed * 0.4,
+  ["secondary"] = default_speed * 0.5,
+  ["secondary_link"] = default_speed * 0.5,
+  ["tertiary"] = default_speed * 0.6,
+  ["tertiary_link"] = default_speed * 0.6,
   ["residential"] = default_speed,
   ["unclassified"] = default_speed,
   ["living_street"] = default_speed,
@@ -68,26 +67,25 @@ man_made_speeds = {
 }
 
 route_speeds = {
-  ["ferry"] = 5
+  ["ferry"] = 1
 }
 
 surface_speeds = {
   ["asphalt"] = default_speed,
-  ["cobblestone:flattened"] = 10,
-  ["paving_stones"] = 10,
-  ["compacted"] = 10,
-  ["cobblestone"] = 6,
-  ["unpaved"] = 6,
-  ["fine_gravel"] = 6,
-  ["gravel"] = 6,
-  ["fine_gravel"] = 6,
-  ["pebbelstone"] = 6,
-  ["ground"] = 6,
-  ["dirt"] = 6,
-  ["earth"] = 6,
-  ["grass"] = 6,
-  ["mud"] = 3,
-  ["sand"] = 3
+  ["cobblestone:flattened"] = default_speed,
+  ["paving_stones"] = default_speed,
+  ["compacted"] = default_speed,
+  ["cobblestone"] = default_speed * 0.8,
+  ["unpaved"] = default_speed,
+  ["gravel"] = default_speed * 0.8,
+  ["fine_gravel"] = default_speed * 0.8,
+  ["pebbelstone"] = default_speed * 0.8,
+  ["ground"] = default_speed * 0.5,
+  ["dirt"] = default_speed * 0.5 ,
+  ["earth"] = default_speed  * 0.5,
+  ["grass"] = default_speed * 0.3,
+  ["mud"] = default_speed * 0.1,
+  ["sand"] =  default_speed * 0.1
 }
 
 take_minimum_of_speeds  = true
@@ -316,7 +314,7 @@ function way_function (way)
     if impliedOneway then
       way.forward_mode = 0
       way.backward_mode = mode_normal
-      way.backward_speed = bicycle_speeds["cycleway"]
+      --way.backward_speed = bicycle_speeds["cycleway"]
     end
   elseif cycleway_left and cycleway_tags[cycleway_left] and cycleway_right and cycleway_tags[cycleway_right] then
     -- prevent implied
@@ -324,12 +322,12 @@ function way_function (way)
     if impliedOneway then
       way.forward_mode = 0
       way.backward_mode = mode_normal
-      way.backward_speed = bicycle_speeds["cycleway"]
+      --way.backward_speed = bicycle_speeds["cycleway"]
     end
   elseif cycleway_right and cycleway_tags[cycleway_right] then
     if impliedOneway then
       way.forward_mode = mode_normal
-      way.backward_speed = bicycle_speeds["cycleway"]
+      --way.backward_speed = bicycle_speeds["cycleway"]
       way.backward_mode = 0
     end
   elseif oneway == "-1" then
@@ -354,8 +352,9 @@ function way_function (way)
   -- cycleways
   --if cycleway and cycleway_tags[cycleway] then
   --  way.forward_speed = bicycle_speeds["cycleway"]
+  --  way.backward_speed = bicycle_speeds["cycleway"]
   --elseif cycleway_left and cycleway_tags[cycleway_left] then
-  --  way.forward_speed = bicycle_speeds["cycleway"]
+  --  way.backward_speed = bicycle_speeds["cycleway"]
   --elseif cycleway_right and cycleway_tags[cycleway_right] then
   --  way.forward_speed = bicycle_speeds["cycleway"]
   --end
@@ -372,62 +371,131 @@ function way_function (way)
   if surface then
     surface_speed = surface_speeds[surface]
     if surface_speed then
-      if way.forward_speed > 0 then
-        way.forward_speed = surface_speed
-      end
-      if way.backward_speed > 0 then
-        way.backward_speed  = surface_speed
-      end
+      way.forward_speed = math.min( surface_speed, way.forward_speed )
+      way.backward_speed = math.min( surface_speed, way.backward_speed )
     end
   end
 
+  -- bridges
+  if bridge=="yes" and highway=="cycleway" then
+    way.forward_speed = way.forward_speed * 2
+    way.backward_speed = way.backward_speed * 2
+  end
+
   -- maxspeed
-  MaxSpeed.limit( way, maxspeed, maxspeed_forward, maxspeed_backward )
+  --MaxSpeed.limit( way, maxspeed, maxspeed_forward, maxspeed_backward )
 
   local score = nil
-  if way.forward_mode == mode_normal or way.backward_mode == mode_normal then
-  	-- query PostGIS for information about the way
+  local sql_query = nil
+  local cursor = nil
+  local row = nil
+  local area_score_outside = 0
+  local area_score_inside = 0
+  local area_score = 0
+  local line_score = 0
+  if (way.forward_mode == mode_normal and way.forward_speed > 0) or 
+     (way.backward_mode == mode_normal and way.backward_speed > 0)then
+  	
+    -- query PostGIS for information about the way
     -- expects data to be imported using oms2pgsql, with the ibikecph configuration
-  	local sql_query = "" ..
-      "SELECT " ..
-      "  SUM(  " ..
-      "    ST_Length(  " ..
-      "      ST_Intersection( way.way, ST_Buffer(area.way, 20) )  " ..
-      "    ) * area.green_score  " ..
-      "  ) / ST_Length( way.way ) AS score " ..
-      "FROM planet_osm_line AS way " ..
-      "LEFT JOIN " ..
-      "  (SELECT " ..
-      "    way, " ..
-      "    osm_id, " ..
-      "    way_area, " ..
-      "    green_score " ..
-      "  FROM planet_osm_polygon) area " ..
-      "ON ST_DWithin( way.way, area.way, 20 ) AND area.green_score>1 " ..
-      "WHERE way.osm_id = " .. way.id ..  " "..
-      "GROUP BY way.osm_id, way.way;"
+  	if true then
+      sql_query = "" ..
+        "SELECT " ..
+        "  way.osm_id AS osm_id, " ..
+        "  SUM( " ..
+        "    ST_Length( " ..
+        "      ST_Intersection( way.way, ST_Buffer(b.way, 20) ) " ..
+        "    ) * b.green_score " ..
+        "  ) / ST_Length( way.way ) AS score " ..
+        "FROM planet_osm_line AS way " ..
+        "INNER JOIN planet_osm_polygon b " ..
+        "ON b.green_score <> 0 " ..
+        "AND ST_DWithin( way.way, b.way, 20 )  " ..
+        "WHERE way.osm_id = " .. way.id ..  " "..
+        "GROUP BY way.osm_id, way.way; "
 
-
-    local cursor = assert( sql_con:execute(sql_query) )
-  	local row = cursor:fetch( {}, "a" )
-  	if row then
-      score = tonumber(row.score)
-  	  if nil ~= score and score>1 then
-        score = score * 3
-        if way.forward_mode == mode_normal then
-          way.forward_speed = way.forward_speed * score
-        end
-        if way.backward_mode == mode_normal then
-          way.backward_speed = way.backward_speed * score
-        end
+      cursor = assert( sql_con:execute(sql_query) )
+      row = cursor:fetch( {}, "a" )
+    	if row then
+        area_score_outside = tonumber(row.score) * 0.3
       end
-  	end
+
+      sql_query = "" ..
+        "SELECT " ..
+        "  way.osm_id AS osm_id, " ..
+        "  SUM( " ..
+        "    ST_Length( " ..
+        "      ST_Intersection( way.way, ST_Buffer(b.way, -10) ) " ..
+        "    ) * b.green_score " ..
+        "  ) / ST_Length( way.way ) AS score " ..
+        "FROM planet_osm_line AS way " ..
+        "INNER JOIN planet_osm_polygon b " ..
+        "ON b.green_score <> 0 " ..
+        "AND ST_Intersects( way.way, b.way )  " ..
+        "WHERE way.osm_id = " .. way.id ..  " "..
+        "GROUP BY way.osm_id, way.way; "
+
+      cursor = assert( sql_con:execute(sql_query) )
+      row = cursor:fetch( {}, "a" )
+      if row then
+        area_score_inside = tonumber(row.score)
+      end
+
+      area_score = area_score_outside + area_score_inside
+
+    end
+
+    if true then
+      sql_query = "" ..
+        "SELECT " ..
+        "  way.osm_id AS osm_id, " ..
+        "  SUM( " ..
+        "    ST_Length( " ..
+        "      ST_Intersection( way.way, ST_Buffer(b.way, 20) ) " ..
+        "    ) * b.green_score " ..
+        "  ) / ST_Length( way.way ) AS score " ..
+        "FROM planet_osm_line AS way " ..
+        "INNER JOIN planet_osm_line b " ..
+        "ON b.green_score <> 0 " ..
+        "AND ST_DWithin( way.way, b.way, 20 )  " ..
+        "AND b.osm_id <> " .. way.id ..  " "..
+        "WHERE way.osm_id = " .. way.id ..  " "..
+        "GROUP BY way.osm_id, way.way; "
+
+      cursor = assert( sql_con:execute(sql_query) )
+      row = cursor:fetch( {}, "a" )
+      if row then
+        line_score = tonumber(row.score) * 1.0
+      end
+    end
+
+    -- sigmoid function http://en.wikipedia.org/wiki/Sigmoid_function
+    -- f(0) = 1
+    local sum = area_score + line_score   -- might be negative
+    local steepness = 4.0                 -- steepness
+    local minimum = 0.2
+    score = 2/(1.0+math.pow(steepness,-sum))
+
+    if score < minimum then
+      score = minimum
+    end
+
+    if way.forward_mode == mode_normal then
+      way.forward_speed = way.forward_speed * score
+    end
+    if way.backward_mode == mode_normal then
+      way.backward_speed = way.backward_speed * score
+    end
   end
+
   -- for debugging, write the score back to postgis
   if score == nil then
     score = 'NULL'
   end
-  local update_query = "UPDATE planet_osm_line SET osrm_speed = " .. score .. " WHERE osm_id = " .. way.id .. ";"
+  local update_query = 
+    "UPDATE planet_osm_line " ..
+    "SET osrm_speed = " .. way.forward_speed .. ", green_computed = " .. score .. " " ..
+    "WHERE osm_id = " .. way.id .. ";"
   sql_con:execute(update_query)
   
 end

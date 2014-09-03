@@ -6,7 +6,7 @@ require 'sys/proctable'
 
 BUILD_FOLDER = 'build'
 DATA_FOLDER = 'sandbox'
-PROFILE = 'bicycle'
+PROFILE = 'bicycle_green'
 OSRM_PORT = 5000
 PROFILES_FOLDER = '../profiles'
 
@@ -16,6 +16,7 @@ end
 
 areas = {
   :kbh => { :country => 'denmark', :bbox => 'top=55.6972 left=12.5222 right=12.624 bottom=55.6376' },
+  :k2 => { :country => 'denmark', :bbox => 'top=55.7397 left=12.3933 right=12.6902 bottom=55.5510' },
   :frd => { :country => 'denmark', :bbox => 'top=55.7007 left=12.4765 bottom=55.6576 right=12.5698' },
   :regh => { :country => 'denmark', :bbox => 'top=56.164 left=11.792 bottom=55.403 right=12.731' },
   :denmark => { :country => 'denmark', :bbox => nil },
