@@ -21,12 +21,12 @@ walking_speed = 6
 
 bicycle_speeds = {
   ["cycleway"] = default_speed,
-  ["primary"] = default_speed * 0.4,
-  ["primary_link"] = default_speed * 0.4,
-  ["secondary"] = default_speed * 0.5,
-  ["secondary_link"] = default_speed * 0.5,
-  ["tertiary"] = default_speed * 0.6,
-  ["tertiary_link"] = default_speed * 0.6,
+  ["primary"] = default_speed * 0.5,
+  ["primary_link"] = default_speed * 0.5,
+  ["secondary"] = default_speed * 0.6,
+  ["secondary_link"] = default_speed * 0.6,
+  ["tertiary"] = default_speed * 0.7,
+  ["tertiary_link"] = default_speed * 0.7,
   ["residential"] = default_speed,
   ["unclassified"] = default_speed,
   ["living_street"] = default_speed,
@@ -34,8 +34,6 @@ bicycle_speeds = {
   ["service"] = default_speed,
   ["track"] = default_speed,
   ["path"] = default_speed
-  --["footway"] = 12,
-  --["pedestrian"] = 12,
 }
 
 pedestrian_speeds = {
@@ -80,8 +78,8 @@ surface_speeds = {
   ["gravel"] = default_speed * 0.8,
   ["fine_gravel"] = default_speed * 0.8,
   ["pebbelstone"] = default_speed * 0.8,
-  ["ground"] = default_speed * 0.5,
-  ["dirt"] = default_speed * 0.5 ,
+  ["ground"] = default_speed * 0.8,
+  ["dirt"] = default_speed * 0.8 ,
   ["earth"] = default_speed  * 0.5,
   ["grass"] = default_speed * 0.3,
   ["mud"] = default_speed * 0.1,
@@ -93,7 +91,7 @@ obey_oneway       = true
 obey_bollards       = false
 use_restrictions    = true
 ignore_areas      = true    -- future feature
-traffic_signal_penalty  = 5
+traffic_signal_penalty  = 10
 u_turn_penalty      = 20
 use_turn_restrictions   = false
 turn_penalty      = 120
@@ -376,29 +374,41 @@ function way_function (way)
     end
   end
 
-  -- bridges
-  if bridge=="yes" and highway=="cycleway" then
-    way.forward_speed = way.forward_speed * 2
-    way.backward_speed = way.backward_speed * 2
-  end
-
   -- maxspeed
   --MaxSpeed.limit( way, maxspeed, maxspeed_forward, maxspeed_backward )
 
-  local score = nil
-  local sql_query = nil
-  local cursor = nil
-  local row = nil
-  local area_score_outside = 0
-  local area_score_inside = 0
-  local area_score = 0
-  local line_score = 0
-  if (way.forward_mode == mode_normal and way.forward_speed > 0) or 
-     (way.backward_mode == mode_normal and way.backward_speed > 0)then
-  	
-    -- query PostGIS for information about the way
-    -- expects data to be imported using oms2pgsql, with the ibikecph configuration
-  	if true then
+  -- compute score
+  local score = 1
+
+  if way.forward_speed > 0 or way.backward_speed > 0 then
+    local bridge = way.tags:Find("bridge")
+    if bridge=="yes" and highway=="cycleway" then
+    -- bonus for bike bridges
+      score = score * 1.5
+    end
+
+    local tunnel = way.tags:Find("tunnel")
+    local layer = tonumber(way.tags:Find("layer"))
+    if tunnel=="yes" or tunnel=="1" or (layer~=nil and layer<0) then
+      -- if in a tunnel or underground, we don't have to consider
+      -- nearby ways or areas
+      score = score * 0.8
+    else
+      -- query PostGIS for information about surroundings
+      -- expects data to be imported using oms2pgsql, with the ibikecph configuration
+      -- specifically ways and areas are expected to have a 'green_score' attribute,
+      -- which we use when computing how green the current way is
+
+      local sql_query = nil
+      local cursor = nil
+      local row = nil
+      local area_score_outside = 0
+      local area_score_inside = 0
+      local area_score = 0
+      local line_score = 0
+
+      -- proximity to areas (parks, landuse, etc)
+      -- expand areas and sum up distance travelled through them
       sql_query = "" ..
         "SELECT " ..
         "  way.osm_id AS osm_id, " ..
@@ -420,6 +430,8 @@ function way_function (way)
         area_score_outside = tonumber(row.score) * 0.3
       end
 
+      -- inside areas (parks, landuse, etc)
+      -- contract areas and sum up distance travelled through them
       sql_query = "" ..
         "SELECT " ..
         "  way.osm_id AS osm_id, " ..
@@ -440,12 +452,9 @@ function way_function (way)
       if row then
         area_score_inside = tonumber(row.score)
       end
-
       area_score = area_score_outside + area_score_inside
 
-    end
-
-    if true then
+      -- proximity to lines (ways, barriers, waterways, etc)
       sql_query = "" ..
         "SELECT " ..
         "  way.osm_id AS osm_id, " ..
@@ -456,9 +465,11 @@ function way_function (way)
         "  ) / ST_Length( way.way ) AS score " ..
         "FROM planet_osm_line AS way " ..
         "INNER JOIN planet_osm_line b " ..
-        "ON b.green_score <> 0 " ..
-        "AND ST_DWithin( way.way, b.way, 20 )  " ..
-        "AND b.osm_id <> " .. way.id ..  " "..
+        "ON b.green_score <> 0 " ..                    -- only ways with a green score
+        "AND b.osm_id <> " .. way.id ..  " " ..        -- don't join on self
+        "AND (b.layer IS NULL OR b.layer>=0) " ..      -- ignore underground ways
+        "AND b.tunnel <> 1" ..                         -- ignore tunnels
+        "AND ST_DWithin( way.way, b.way, 20 )  " ..    -- within 20 meters
         "WHERE way.osm_id = " .. way.id ..  " "..
         "GROUP BY way.osm_id, way.way; "
 
@@ -467,31 +478,26 @@ function way_function (way)
       if row then
         line_score = tonumber(row.score) * 1.0
       end
-    end
 
-    -- sigmoid function http://en.wikipedia.org/wiki/Sigmoid_function
-    -- f(0) = 1
-    local sum = area_score + line_score   -- might be negative
-    local steepness = 4.0                 -- steepness
-    local minimum = 0.2
-    score = 2/(1.0+math.pow(steepness,-sum))
+      -- use sigmoid function to ensure a factor in the range [0..2]
+      -- http://en.wikipedia.org/wiki/Sigmoid_function
+      -- input of will produce 1 as output
+      local sum = area_score + line_score   -- might be negative
+      local steepness = 4.0                 -- steepness
+      score = 2/(1.0+math.pow(steepness,-sum))
+    end
+  end
 
-    if score < minimum then
-      score = minimum
-    end
 
-    if way.forward_mode == mode_normal then
-      way.forward_speed = way.forward_speed * score
-    end
-    if way.backward_mode == mode_normal then
-      way.backward_speed = way.backward_speed * score
-    end
+  if score == nil then
+    score = 'NULL'
+  else
+    local min_speed = 1
+    way.forward_speed = math.max(way.forward_speed * score, min_speed )
+    way.backward_speed = math.max(way.backward_speed * score, min_speed )
   end
 
   -- for debugging, write the score back to postgis
-  if score == nil then
-    score = 'NULL'
-  end
   local update_query = 
     "UPDATE planet_osm_line " ..
     "SET osrm_speed = " .. way.forward_speed .. ", green_computed = " .. score .. " " ..
