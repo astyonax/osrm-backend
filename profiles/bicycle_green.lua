@@ -22,11 +22,11 @@ walking_speed = 6
 bicycle_speeds = {
   ["cycleway"] = default_speed,
   ["primary"] = default_speed * 0.5,
-  ["primary_link"] = default_speed * 0.5,
+  ["primary_link"] = default_speed * 0.6,
   ["secondary"] = default_speed * 0.6,
-  ["secondary_link"] = default_speed * 0.6,
+  ["secondary_link"] = default_speed * 0.7,
   ["tertiary"] = default_speed * 0.7,
-  ["tertiary_link"] = default_speed * 0.7,
+  ["tertiary_link"] = default_speed * 0.8,
   ["residential"] = default_speed,
   ["unclassified"] = default_speed,
   ["living_street"] = default_speed,
@@ -407,15 +407,25 @@ function way_function (way)
       local area_score = 0
       local line_score = 0
 
-      -- proximity to areas (parks, landuse, etc)
-      -- expand areas and sum up distance travelled through them
+      -- first find areas that are within 20m of the way, then:
+      -- expand areas to find which areas be pass clsoe by (weight 0.3)
+      -- contract areas to find which areas we pass through (weight 1.0)
+
       sql_query = "" ..
         "SELECT " ..
         "  way.osm_id AS osm_id, " ..
-        "  SUM( " ..
-        "    ST_Length( " ..
-        "      ST_Intersection( way.way, ST_Buffer(b.way, 20) ) " ..
-        "    ) * b.green_score " ..
+        "  ( " ..
+        "    0.3 * SUM( " ..
+        "      ST_Length( " ..
+        "        ST_Intersection( way.way, ST_Buffer(b.way, 20) ) " ..      -- within 20m of area
+        "      ) * b.green_score " ..
+        "    ) " ..
+        "    + " ..
+        "    1.0 * SUM( " ..
+        "      ST_Length( " ..
+        "        ST_Intersection( way.way, ST_Buffer(b.way, -10) ) " ..   -- 10m inside area
+        "      ) * b.green_score " ..
+        "    ) " ..
         "  ) / ST_Length( way.way ) AS score " ..
         "FROM planet_osm_line AS way " ..
         "INNER JOIN planet_osm_polygon b " ..
@@ -427,34 +437,13 @@ function way_function (way)
       cursor = assert( sql_con:execute(sql_query) )
       row = cursor:fetch( {}, "a" )
     	if row then
-        area_score_outside = tonumber(row.score) * 0.3
+        area_score = row.score
+        if area_score==nil then
+          area_score = 1
+        end
       end
 
-      -- inside areas (parks, landuse, etc)
-      -- contract areas and sum up distance travelled through them
-      sql_query = "" ..
-        "SELECT " ..
-        "  way.osm_id AS osm_id, " ..
-        "  SUM( " ..
-        "    ST_Length( " ..
-        "      ST_Intersection( way.way, ST_Buffer(b.way, -10) ) " ..
-        "    ) * b.green_score " ..
-        "  ) / ST_Length( way.way ) AS score " ..
-        "FROM planet_osm_line AS way " ..
-        "INNER JOIN planet_osm_polygon b " ..
-        "ON b.green_score <> 0 " ..
-        "AND ST_Intersects( way.way, b.way )  " ..
-        "WHERE way.osm_id = " .. way.id ..  " "..
-        "GROUP BY way.osm_id, way.way; "
-
-      cursor = assert( sql_con:execute(sql_query) )
-      row = cursor:fetch( {}, "a" )
-      if row then
-        area_score_inside = tonumber(row.score)
-      end
-      area_score = area_score_outside + area_score_inside
-
-      -- proximity to lines (ways, barriers, waterways, etc)
+      --proximity to lines (ways, barriers, waterways, etc)
       sql_query = "" ..
         "SELECT " ..
         "  way.osm_id AS osm_id, " ..
@@ -476,7 +465,10 @@ function way_function (way)
       cursor = assert( sql_con:execute(sql_query) )
       row = cursor:fetch( {}, "a" )
       if row then
-        line_score = tonumber(row.score) * 1.0
+        line_score = row.score * 1.0
+        if line_score==nil then
+          line_score = 1
+        end
       end
 
       -- use sigmoid function to ensure a factor in the range [0..2]
@@ -493,16 +485,20 @@ function way_function (way)
     score = 'NULL'
   else
     local min_speed = 1
-    way.forward_speed = math.max(way.forward_speed * score, min_speed )
-    way.backward_speed = math.max(way.backward_speed * score, min_speed )
+    if way.forward_speed>0 then
+      way.forward_speed = math.max(way.forward_speed * score, min_speed )
+    end
+    if way.backward_speed>0 then
+      way.backward_speed = math.max(way.backward_speed * score, min_speed )
+    end
   end
 
   -- for debugging, write the score back to postgis
-  local update_query = 
-    "UPDATE planet_osm_line " ..
-    "SET osrm_speed = " .. way.forward_speed .. ", green_computed = " .. score .. " " ..
-    "WHERE osm_id = " .. way.id .. ";"
-  sql_con:execute(update_query)
+  -- local update_query = 
+  --   "UPDATE planet_osm_line " ..
+  --   "SET osrm_speed = " .. way.forward_speed .. ", green_computed = " .. score .. " " ..
+  --   "WHERE osm_id = " .. way.id .. ";"
+  -- sql_con:execute(update_query)
   
 end
 
