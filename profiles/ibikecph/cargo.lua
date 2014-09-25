@@ -11,12 +11,12 @@ cycleway_tags = {["track"]=true,["lane"]=true,["opposite"]=true,["opposite_lane"
 service_tag_restricted = { ["parking_aisle"] = true }
 restriction_exception_tags = { "bicycle", "vehicle", "access" }
 
-default_speed = 15
+default_speed = 10
 
-walking_speed = 6
+walking_speed = 2
 
 bicycle_speeds = {
-  ["cycleway"] = default_speed,
+  ["cycleway"] = default_speed * 1.2,
   ["primary"] = default_speed,
   ["primary_link"] = default_speed,
   ["secondary"] = default_speed,
@@ -28,16 +28,15 @@ bicycle_speeds = {
   ["living_street"] = default_speed,
   ["road"] = default_speed,
   ["service"] = default_speed,
-  ["track"] = 12,
-  ["path"] = 12
+  ["track"] = default_speed * 0.2,
+  ["path"] = default_speed * 0.2
   --["footway"] = 12,
   --["pedestrian"] = 12,
 }
 
 pedestrian_speeds = {
   ["footway"] = walking_speed,
-  ["pedestrian"] = walking_speed,
-  ["steps"] = 2
+  ["pedestrian"] = walking_speed
 }
 
 railway_speeds = {
@@ -68,21 +67,21 @@ route_speeds = {
 
 surface_speeds = {
   ["asphalt"] = default_speed,
-  ["cobblestone:flattened"] = 10,
-  ["paving_stones"] = 10,
-  ["compacted"] = 10,
-  ["cobblestone"] = 6,
-  ["unpaved"] = 6,
+  ["cobblestone:flattened"] = default_speed*0.8,
+  ["paving_stones"] = default_speed*0.8,
+  ["compacted"] = default_speed*0.2,
+  ["cobblestone"] = default_speed*0.2,
+  ["unpaved"] = default_speed*0.2,
+  ["fine_gravel"] = default_speed*0.2,
+  ["gravel"] = default_speed*0.2,
   ["fine_gravel"] = 6,
-  ["gravel"] = 6,
-  ["fine_gravel"] = 6,
-  ["pebbelstone"] = 6,
-  ["ground"] = 6,
-  ["dirt"] = 6,
-  ["earth"] = 6,
-  ["grass"] = 6,
-  ["mud"] = 3,
-  ["sand"] = 3
+  ["pebbelstone"] = default_speed*0.2,
+  ["ground"] =  = default_speed*0.2,
+  ["dirt"] = default_speed*0.2,
+  ["earth"] = default_speed*0.2,
+  ["grass"] = default_speed*0.2,
+  ["mud"] = default_speed*0.1,
+  ["sand"] = default_speed*0.1
 }
 
 take_minimum_of_speeds  = true
