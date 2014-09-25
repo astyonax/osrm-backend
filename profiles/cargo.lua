@@ -76,7 +76,7 @@ surface_speeds = {
   ["gravel"] = default_speed*0.2,
   ["fine_gravel"] = 6,
   ["pebbelstone"] = default_speed*0.2,
-  ["ground"] =  = default_speed*0.2,
+  ["ground"] = default_speed*0.2,
   ["dirt"] = default_speed*0.2,
   ["earth"] = default_speed*0.2,
   ["grass"] = default_speed*0.2,
