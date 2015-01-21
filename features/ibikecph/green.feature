@@ -2,7 +2,7 @@
 Feature: Bike - prioritize green routes through green areas
 
 	Background:
-		Given the profile "ibikecph/green"
+		Given the profile "green"
 	
 	@square	
 	Scenario: Bike - Prefer ways close to parks
