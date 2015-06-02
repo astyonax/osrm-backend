@@ -382,7 +382,128 @@ function way_function (way, result)
   -- maxspeed
   limit( result, maxspeed, maxspeed_forward, maxspeed_backward )
 
-  -- todo: Postgis stuff is missing
+  -- compute score
+  local score = 1
+
+  if way.forward_speed > 0 or way.backward_speed > 0 then
+    local bridge = way.tags:Find("bridge")
+    if bridge=="yes" and highway=="cycleway" then
+    -- bonus for bike bridges
+      score = score * 1.5
+    end
+
+    local tunnel = way.tags:Find("tunnel")
+    local layer = tonumber(way.tags:Find("layer"))
+    if tunnel=="yes" or tunnel=="1" or (layer~=nil and layer<0) then
+      -- if in a tunnel or underground, we don't have to consider
+      -- nearby ways or areas
+      score = score * 0.8
+    else
+      -- query PostGIS for information about surroundings
+      -- expects data to be imported using oms2pgsql, with the ibikecph configuration
+      -- specifically ways and areas are expected to have a 'green_score' attribute,
+      -- which we use when computing how green the current way is
+
+      local sql_query = nil
+      local cursor = nil
+      local row = nil
+      local area_score_outside = 0
+      local area_score_inside = 0
+      local area_score = 0
+      local line_score = 0
+
+      -- first find areas that are within 20m of the way, then:
+      -- expand areas to find which areas be pass clsoe by (weight 0.3)
+      -- contract areas to find which areas we pass through (weight 1.0)
+
+      sql_query = "" ..
+        "SELECT " ..
+        "  way.osm_id AS osm_id, " ..
+        "  ( " ..
+        "    0.3 * SUM( " ..
+        "      ST_Length( " ..
+        "        ST_Intersection( way.way, ST_Buffer(b.way, 20) ) " ..      -- within 20m of area
+        "      ) * b.green_score " ..
+        "    ) " ..
+        "    + " ..
+        "    1.0 * SUM( " ..
+        "      ST_Length( " ..
+        "        ST_Intersection( way.way, ST_Buffer(b.way, -10) ) " ..   -- 10m inside area
+        "      ) * b.green_score " ..
+        "    ) " ..
+        "  ) / ST_Length( way.way ) AS score " ..
+        "FROM planet_osm_line AS way " ..
+        "INNER JOIN planet_osm_polygon b " ..
+        "ON b.green_score <> 0 " ..
+        "AND ST_DWithin( way.way, b.way, 20 )  " ..
+        "WHERE way.osm_id = " .. way.id ..  " "..
+        "GROUP BY way.osm_id, way.way; "
+
+      cursor = assert( sql_con:execute(sql_query) )
+      row = cursor:fetch( {}, "a" )
+      if row then
+        area_score = row.score
+        if area_score==nil then
+          area_score = 1
+        end
+      end
+
+      --proximity to lines (ways, barriers, waterways, etc)
+      sql_query = "" ..
+        "SELECT " ..
+        "  way.osm_id AS osm_id, " ..
+        "  SUM( " ..
+        "    ST_Length( " ..
+        "      ST_Intersection( way.way, ST_Buffer(b.way, 20) ) " ..
+        "    ) * b.green_score " ..
+        "  ) / ST_Length( way.way ) AS score " ..
+        "FROM planet_osm_line AS way " ..
+        "INNER JOIN planet_osm_line b " ..
+        "ON b.green_score <> 0 " ..                    -- only ways with a green score
+        "AND b.osm_id <> " .. way.id ..  " " ..        -- don't join on self
+        "AND (b.layer IS NULL OR b.layer>=0) " ..      -- ignore underground ways
+        "AND b.tunnel <> 1" ..                         -- ignore tunnels
+        "AND ST_DWithin( way.way, b.way, 20 )  " ..    -- within 20 meters
+        "WHERE way.osm_id = " .. way.id ..  " "..
+        "GROUP BY way.osm_id, way.way; "
+
+      cursor = assert( sql_con:execute(sql_query) )
+      row = cursor:fetch( {}, "a" )
+      if row then
+        line_score = row.score * 1.0
+        if line_score==nil then
+          line_score = 1
+        end
+      end
+
+      -- use sigmoid function to ensure a factor in the range [0..2]
+      -- http://en.wikipedia.org/wiki/Sigmoid_function
+      -- input of will produce 1 as output
+      local sum = area_score + line_score   -- might be negative
+      local steepness = 4.0                 -- steepness
+      score = 2/(1.0+math.pow(steepness,-sum))
+    end
+  end
+
+
+  if score == nil then
+    score = 'NULL'
+  else
+    local min_speed = 1
+    if way.forward_speed>0 then
+      way.forward_speed = math.max(way.forward_speed * score, min_speed )
+    end
+    if way.backward_speed>0 then
+      way.backward_speed = math.max(way.backward_speed * score, min_speed )
+    end
+  end
+
+  -- for debugging, write the score back to postgis
+  -- local update_query = 
+  --   "UPDATE planet_osm_line " ..
+  --   "SET osrm_speed = " .. way.forward_speed .. ", green_computed = " .. score .. " " ..
+  --   "WHERE osm_id = " .. way.id .. ";"
+  -- sql_con:execute(update_query)
 end
 
 function turn_function (angle)
