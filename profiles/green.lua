@@ -1,5 +1,7 @@
-require("lib/access")
-require("lib/maxspeed")
+-- I Bike CPH, fastest route on bike
+
+local find_access_tag = require("lib/access").find_access_tag
+local limit = require("lib/maxspeed").limit
 
 -- connect to postgis
 lua_sql = require "luasql.postgres"
@@ -127,28 +129,30 @@ function get_exceptions(vector)
 end
 
 function node_function (node, result)
-  local barrier = node:get_value_by_key("barrier")
-  local access = Access.find_access_tag(node, access_tags_hierachy)
-  local traffic_signal = node:get_value_by_key("highway")
+  -- parse access and barrier tags
+  local highway = node:get_value_by_key("highway")
+  local is_crossing = highway and highway == "crossing"
 
-  -- flag node if it carries a traffic light
-  if traffic_signal and traffic_signal == "traffic_signals" then
-    result.traffic_lights = true
+  local access = find_access_tag(node, access_tags_hierachy)
+  if access and access ~= "" then
+    -- access restrictions on crossing nodes are not relevant for
+    -- the traffic on the road
+    if access_tag_blacklist[access] and not is_crossing then
+      result.barrier = true
+    end
+  else
+    local barrier = node:get_value_by_key("barrier")
+    if barrier and "" ~= barrier then
+      if not barrier_whitelist[barrier] then
+        result.barrier = true
+      end
+    end
   end
 
-  -- parse access and barrier tags
-  if access and access ~= "" then
-    if access_tag_blacklist[access] then
-      result.barrier = true
-    else
-      result.barrier = false
-    end
-  elseif barrier and barrier ~= "" then
-    if barrier_whitelist[barrier] then
-      result.barrier = false
-    else
-      result.barrier = true
-    end
+  -- check if node is a traffic light
+  local tag = node:get_value_by_key("highway")
+  if tag and "traffic_signals" == tag then
+    result.traffic_lights = true;
   end
 end
 
@@ -176,7 +180,7 @@ function way_function (way, result)
   end
 
   -- access
-  local access = Access.find_access_tag(way, access_tags_hierachy)
+  local access = find_access_tag(way, access_tags_hierachy)
   if access and access_tag_blacklist[access] then
     return
   end
@@ -376,9 +380,9 @@ function way_function (way, result)
   end
 
   -- maxspeed
-  MaxSpeed.limit( result, maxspeed, maxspeed_forward, maxspeed_backward )
+  limit( result, maxspeed, maxspeed_forward, maxspeed_backward )
 
-  way_id = 1 + way.id()
+  -- todo: Postgis stuff is missing
 end
 
 function turn_function (angle)
