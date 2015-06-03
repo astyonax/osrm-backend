@@ -490,11 +490,11 @@ function way_function (way, result)
     score = 'NULL'
   else
     local min_speed = 1
-    if way.forward_speed>0 then
-      way.forward_speed = math.max(way.forward_speed * score, min_speed )
+    if result.forward_speed>0 then
+      result.forward_speed = math.max(result.forward_speed * score, min_speed )
     end
-    if way.backward_speed>0 then
-      way.backward_speed = math.max(way.backward_speed * score, min_speed )
+    if result.backward_speed>0 then
+      result.backward_speed = math.max(result.backward_speed * score, min_speed )
     end
   end
 
