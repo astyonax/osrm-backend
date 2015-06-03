@@ -385,15 +385,15 @@ function way_function (way, result)
   -- compute score
   local score = 1
 
-  if way.forward_speed > 0 or way.backward_speed > 0 then
-    local bridge = way.tags:Find("bridge")
+  if result.forward_speed > 0 or result.backward_speed > 0 then
+    local bridge = way:get_value_by_key("bridge")
     if bridge=="yes" and highway=="cycleway" then
     -- bonus for bike bridges
       score = score * 1.5
     end
 
-    local tunnel = way.tags:Find("tunnel")
-    local layer = tonumber(way.tags:Find("layer"))
+    local tunnel = way:get_value_by_key("tunnel")
+    local layer = tonumber(way:get_value_by_key("layer"))
     if tunnel=="yes" or tunnel=="1" or (layer~=nil and layer<0) then
       -- if in a tunnel or underground, we don't have to consider
       -- nearby ways or areas
@@ -411,7 +411,7 @@ function way_function (way, result)
       local area_score_inside = 0
       local area_score = 0
       local line_score = 0
-
+      local wayid = way:id()
       -- first find areas that are within 20m of the way, then:
       -- expand areas to find which areas be pass clsoe by (weight 0.3)
       -- contract areas to find which areas we pass through (weight 1.0)
@@ -436,7 +436,7 @@ function way_function (way, result)
         "INNER JOIN planet_osm_polygon b " ..
         "ON b.green_score <> 0 " ..
         "AND ST_DWithin( way.way, b.way, 20 )  " ..
-        "WHERE way.osm_id = " .. way.id ..  " "..
+        "WHERE way.osm_id = " .. wayid ..  " "..
         "GROUP BY way.osm_id, way.way; "
 
       cursor = assert( sql_con:execute(sql_query) )
@@ -460,11 +460,11 @@ function way_function (way, result)
         "FROM planet_osm_line AS way " ..
         "INNER JOIN planet_osm_line b " ..
         "ON b.green_score <> 0 " ..                    -- only ways with a green score
-        "AND b.osm_id <> " .. way.id ..  " " ..        -- don't join on self
+        "AND b.osm_id <> " .. wayid ..  " " ..        -- don't join on self
         "AND (b.layer IS NULL OR b.layer>=0) " ..      -- ignore underground ways
         "AND b.tunnel <> 1" ..                         -- ignore tunnels
         "AND ST_DWithin( way.way, b.way, 20 )  " ..    -- within 20 meters
-        "WHERE way.osm_id = " .. way.id ..  " "..
+        "WHERE way.osm_id = " .. wayid ..  " "..
         "GROUP BY way.osm_id, way.way; "
 
       cursor = assert( sql_con:execute(sql_query) )
