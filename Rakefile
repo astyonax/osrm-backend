@@ -6,7 +6,7 @@ require 'sys/proctable'
 
 BUILD_FOLDER = 'build'
 DATA_FOLDER = 'sandbox'
-PROFILE = 'bicycle_green'
+PROFILE = 'green'
 OSRM_PORT = 5000
 PROFILES_FOLDER = '../profiles'
 
