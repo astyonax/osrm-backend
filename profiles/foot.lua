@@ -7,6 +7,7 @@ local Set = require('lib/set')
 local Sequence = require('lib/sequence')
 local Handlers = require("lib/handlers")
 local next = next       -- bind to local for speed
+local pprint = require('lib/pprint')
 
 properties.max_speed_for_map_matching    = 40/3.6 -- kmph -> m/s
 properties.use_turn_restrictions         = false
@@ -70,7 +71,8 @@ local profile = {
   },
 
   avoid = Set {
-    'impassable'
+    'impassable',
+    'construction'
   },
 
   speeds = Sequence {
@@ -194,46 +196,45 @@ function way_function(way, result)
   -- of the prefetched tags to be present, ie. the data table
   -- cannot be empty
   if next(data) == nil then     -- is the data table empty?
-    return
+    return false
   end
-
   local handlers = Sequence {
     -- set the default mode for this profile. if can be changed later
     -- in case it turns we're e.g. on a ferry
-    'handle_default_mode',
+    Handlers.handle_default_mode,
 
     -- check various tags that could indicate that the way is not
     -- routable. this includes things like status=impassable,
     -- toll=yes and oneway=reversible
-    'handle_blocked_ways',
+    Handlers.handle_blocked_ways,
 
     -- determine access status by checking our hierarchy of
     -- access tags, e.g: motorcar, motor_vehicle, vehicle
-    'handle_access',
+    Handlers.handle_access,
 
     -- check whether forward/backward directons are routable
-    'handle_oneway',
+    Handlers.handle_oneway,
 
     -- check whether forward/backward directons are routable
-    'handle_destinations',
+    Handlers.handle_destinations,
 
     -- check whether we're using a special transport mode
-    'handle_ferries',
-    'handle_movables',
+    Handlers.handle_ferries,
+    Handlers.handle_movables,
 
     -- compute speed taking into account way type, maxspeed tags, etc.
-    'handle_speed',
-    'handle_surface',
+    Handlers.handle_speed,
+    Handlers.handle_surface,
 
     -- handle turn lanes and road classification, used for guidance
-    'handle_classification',
+    Handlers.handle_classification,
 
     -- handle various other flags
-    'handle_roundabouts',
-    'handle_startpoint',
+    Handlers.handle_roundabouts,
+    Handlers.handle_startpoint,
 
     -- set name, ref and pronunciation
-    'handle_names'
+    Handlers.handle_names
   }
 
   Handlers.run(handlers,way,result,data,profile)
@@ -256,3 +257,6 @@ function turn_function (turn)
       end
   end
 end
+
+profile.way_function = way_function
+return profile
