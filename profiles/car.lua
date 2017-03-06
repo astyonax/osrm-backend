@@ -227,6 +227,9 @@ local profile = {
     impassable      =  0
   },
 
+
+  maxspeed_increase = true,
+
   -- http://wiki.openstreetmap.org/wiki/Speed_limits
   maxspeed_table_default = {
     urban = 50,

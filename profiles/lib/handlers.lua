@@ -16,7 +16,7 @@ function Handlers.handle_init(way,result,data,profile)
   result.backward_speed = -1
   result.forward_mode = -1
   result.backward_mode = -1
-  result.duration = 0
+  result.duration = -1
   result.road_classification = {}
 end
 
@@ -118,7 +118,7 @@ function Handlers.handle_ferries(way,result,data,profile)
     local route_speed = profile.route_speeds[route]
     if route_speed and route_speed > 0 then
      local duration  = way:get_value_by_key("duration")
-     if duration and durationIsValid(duration) then
+     if duration ~= nil and durationIsValid(duration) then
        result.duration = math.max( parseDuration(duration), 1 )
      end
      result.forward_mode = mode.ferry
@@ -392,11 +392,19 @@ function Handlers.handle_maxspeed(way,result,data,profile)
   backward = Handlers.parse_maxspeed(backward,profile)
 
   if forward and forward > 0 then
-    result.forward_speed = forward * profile.speed_reduction
+    if profile.maxspeed_increase then
+      result.forward_speed = forward * profile.speed_reduction
+    else
+      result.forward_speed = math.min( result.forward_speed, forward * profile.speed_reduction )
+    end
   end
 
   if backward and backward > 0 then
-    result.backward_speed = backward * profile.speed_reduction
+    if profile.maxspeed_increase then
+      result.backward_speed = backward * profile.speed_reduction
+    else
+      result.backward_speed = math.min( result.backward_speed, backward * profile.speed_reduction )
+    end
   end
 end
 
@@ -580,8 +588,6 @@ function Handlers.both_directions_handled(data,result,profile)
     (data.backward_status == 'blacklisted' and 
       (data.backward_access_key == nil or data.backward_access_key == profile.access_tags_hierarchy[1]))
   
-  print(data.backward_status)
-  
   return forward_handled and backward_handled
 end
 
@@ -595,6 +601,10 @@ function Handlers.merge(from,to)
     to.backward_mode = from.backward_mode
     to.backward_speed = from.backward_speed
     to.backward_rate = from.backward_rate
+  end
+
+  if to.duration == -1 then
+    to.duration = from.duration
   end
   
   to.name = to.name or from.name
