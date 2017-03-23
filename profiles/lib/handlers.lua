@@ -16,7 +16,7 @@ function Handlers.handle_init(way,result,data,profile)
   result.backward_speed = -1
   result.forward_mode = -1
   result.backward_mode = -1
-  result.duration = -1
+  result.duration = 0
   result.road_classification = {}
 end
 
@@ -57,7 +57,7 @@ function Handlers.handle_names(way,result,data,profile)
 end
 
 -- junctions
-function Handlers.handle_roundabouts(way,result,data,profile)
+function Handlers.handle_roundabouts(way,result,data,profile)  
   local junction = way:get_value_by_key("junction");
 
   if junction == "roundabout" then
@@ -111,20 +111,36 @@ function Handlers.handle_destinations(way,result,data,profile)
   end
 end
 
--- handling ferries and piers
-function Handlers.handle_ferries(way,result,data,profile)
-  local route = data.route
-  if route then
-    local route_speed = profile.route_speeds[route]
-    if route_speed and route_speed > 0 then
-     local duration  = way:get_value_by_key("duration")
-     if duration ~= nil and durationIsValid(duration) then
-       result.duration = math.max( parseDuration(duration), 1 )
-     end
-     result.forward_mode = mode.ferry
-     result.backward_mode = mode.ferry
-     result.forward_speed = route_speed
-     result.backward_speed = route_speed
+-- handling routes, eg. ferries, trains and subways
+function Handlers.handle_routes(way,result,data,profile)
+  -- loop modes
+  for mode_name,mode_settings in pairs(profile.routes) do
+    -- loop over keys
+    for i,key in ipairs(mode_settings.keys) do 
+      local tag_value = data[key]                       -- note: the tag must be prefetched
+      if tag_value then
+        local speed = mode_settings.speeds[tag_value]   -- is the tag value listed in the speed table?
+        if speed then
+          --print('' .. key .. '=' .. tag_value .. ': ' .. speed .. 'km/h' )
+          
+          -- convert from mode name to mode id, y looking in global mode table
+          result.forward_mode = mode[mode_name]
+          result.backward_mode = mode[mode_name]
+          
+          -- if a duration is present, use it
+          -- otherwise use speed defined in the profile for the route type
+          local duration  = way:get_value_by_key("duration")
+          if duration and durationIsValid(duration) then
+            result.duration = math.max( parseDuration(duration), 1 )
+          else
+            result.forward_speed = speed
+            result.backward_speed = speed
+          end
+          
+          -- TODO
+          -- only use route if mode=yes or access otherwise granted
+        end
+      end
     end
   end
 end
@@ -227,15 +243,15 @@ function Handlers.handle_access(way,result,data,profile)
 
   -- only allow a subset of roads that are marked as restricted
   if profile.restricted_highway_whitelist[data.highway] then
-      if profile.restricted_access_tag_list[data.forward_access] then
-          data.forward_status = 'restricted'
-          result.forward_restricted = true
-      end
+    if profile.restricted_access_tag_list[data.forward_access] then
+      data.forward_status = 'restricted'
+      result.forward_restricted = true
+    end
 
-      if profile.restricted_access_tag_list[data.backward_access] then
-          result.backward_restricted = true
-          data.backward_status = 'restricted'
-      end
+    if profile.restricted_access_tag_list[data.backward_access] then
+      data.backward_status = 'restricted'
+      result.backward_restricted = true
+    end
   end
 
   if profile.access_tag_blacklist[data.forward_access] and not result.forward_restricted then
@@ -247,7 +263,7 @@ function Handlers.handle_access(way,result,data,profile)
     data.backward_status = 'blacklisted'
     result.backward_mode = mode.inaccessible
   end
-
+  
   if result.forward_mode == mode.inaccessible and result.backward_mode == mode.inaccessible then
     return false
   end
@@ -272,26 +288,30 @@ end
 
 -- handle speed (excluding maxspeed)
 function Handlers.handle_speed(way,result,data,profile)
-  if result.forward_speed ~= -1 then
-    return        -- abort if already set, eg. by a route
+  local forward_missing = result.duration <= 0 and result.forward_speed == -1 and result.forward_mode ~= mode.inaccessible
+  local backward_missing = result.duration <= 0 and result.backward_speed == -1 and result.backward_mode ~= mode.inaccessible
+  local key,value,speed
+  
+  if forward_missing or backward_missing then
+    key,value,speed = Tags.get_constant_by_key_value(way,profile.speeds)
   end
 
-  local key,value,speed = Tags.get_constant_by_key_value(way,profile.speeds)
-  if speed then
-    -- set speed by way type
-    result.forward_speed = speed
-    result.backward_speed = speed
-  else
-    -- Set the avg speed on ways that are marked accessible
-    if profile.access_tag_whitelist[data.forward_access] then
+  if forward_missing then
+    if speed then
+      result.forward_speed = speed
+    elseif profile.access_tag_whitelist[data.forward_access] then
       result.forward_speed = profile.default_speed
     elseif data.forward_access and not profile.access_tag_blacklist[data.forward_access] then
       result.forward_speed = profile.default_speed -- fallback to the avg speed if access tag is not blacklisted
     elseif not data.forward_access and data.backward_access then
        result.forward_mode = mode.inaccessible
     end
-
-    if profile.access_tag_whitelist[data.backward_access] then
+  end
+  
+  if backward_missing then 
+    if speed then
+      result.backward_speed = speed
+    elseif profile.access_tag_whitelist[data.backward_access] then
       result.backward_speed = profile.default_speed
     elseif data.backward_access and not profile.access_tag_blacklist[data.backward_access] then
       result.backward_speed = profile.default_speed -- fallback to the avg speed if access tag is not blacklisted
@@ -450,9 +470,9 @@ function Handlers.handle_oneway(way,result,data,profile)
     -- oneway=no, oneway:conditional=yes @ (condition2)
     -- condition1 will be always true and condition2 will be always false.
     if way:get_value_by_key("oneway:conditional") then
-        oneway = "no"
+      oneway = "no"
     else
-        oneway = Tags.get_value_by_prefixed_sequence(way,profile.restrictions,'oneway') or way:get_value_by_key("oneway")
+      oneway = Tags.get_value_by_prefixed_sequence(way,profile.restrictions,'oneway') or way:get_value_by_key("oneway")
     end
   end
   
@@ -557,10 +577,9 @@ end
 
 function Handlers.run(handlers,way,result,data,profile)
   for i,handler in ipairs(handlers) do
-    if handler and handler(way,result,data,profile) == false then
+    if handler(way,result,data,profile) == false then
       result.forward_mode = mode.inaccessible
       result.backward_mode = mode.inaccessible      
-      --print('aborting at: ' .. i)
       return false
     end
   end
@@ -579,12 +598,12 @@ function Handlers.both_directions_handled(data,result,profile)
   -- we should  consider pushing bikes.
   
   local forward_handled = 
-    (result.forward_mode ~= mode.inaccessible and result.forward_speed > 0) or
+    (result.forward_mode ~= mode.inaccessible and (result.forward_speed > 0 or result.duration > 0)) or
     (data.forward_status == 'blacklisted' and 
       (data.forward_access_key == nil or data.forward_access_key == profile.access_tags_hierarchy[1]))
 
   local backward_handled = 
-    (result.backward_mode ~= mode.inaccessible and result.backward_speed > 0) or
+    (result.backward_mode ~= mode.inaccessible and (result.backward_speed > 0 or result.duration > 0)) or
     (data.backward_status == 'blacklisted' and 
       (data.backward_access_key == nil or data.backward_access_key == profile.access_tags_hierarchy[1]))
   

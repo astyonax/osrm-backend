@@ -114,11 +114,32 @@ local profile = {
     }
   },
 
-  route_speeds = {
-    ferry = 5
-  },
-
-  bridge_speeds = {
+  routes = {
+    ferry = {
+      keys = { 'route' },
+      speeds = {
+        ferry = 5
+      }
+    },
+    
+    train = {
+      keys = { 'route', 'railway' },
+      speeds = {
+        train = 10,
+        railway = 10,
+        subway = 10,
+        light_rail = 10,
+        monorail = 10,
+        tram = 10
+      }
+    },
+    
+    default = {
+      keys = { 'route' },
+      speeds = {
+        movable = 5
+      }
+    }
   },
 
   surface_speeds = {
@@ -219,8 +240,7 @@ function way_function(way, result)
     Handlers.handle_destinations,
 
     -- check whether we're using a special transport mode
-    Handlers.handle_ferries,
-    Handlers.handle_movables,
+    Handlers.handle_routes,
 
     -- compute speed taking into account way type, maxspeed tags, etc.
     Handlers.handle_speed,

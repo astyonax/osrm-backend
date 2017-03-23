@@ -126,21 +126,6 @@ local profile = {
     }
   },
   
-  pedestrian_speeds = {
-    footway = walking_speed,
-    pedestrian = walking_speed,
-    steps = 2
-  },
-
-  railway_speeds = {
-    train = 10,
-    railway = 10,
-    subway = 10,
-    light_rail = 10,
-    monorail = 10,
-    tram = 10
-  },
-
   platform_speeds = {
     platform = walking_speed
   },
@@ -154,12 +139,32 @@ local profile = {
     pier = walking_speed
   },
 
-  route_speeds = {
-    ferry = 5
-  },
-
-  bridge_speeds = {
-    movable = 5
+  routes = {
+    ferry = {
+      keys = { 'route' },
+      speeds = {
+        ferry = 5
+      }
+    },
+    
+    train = {
+      keys = { 'route', 'railway' },
+      speeds = {
+        train = 10,
+        railway = 10,
+        subway = 10,
+        light_rail = 10,
+        monorail = 10,
+        tram = 10
+      }
+    },
+    
+    default = {
+      keys = { 'route' },
+      speeds = {
+        movable = 5
+      }
+    }
   },
 
   surface_speeds = {
@@ -265,24 +270,28 @@ function way_function (way, result)
   bicycle_way_function(data,way,bike_result)
     
   --pprint(bike_result)
-  -- if not Handlers.both_directions_handled(data,bike_result,profile) then
-  --   -- one or both directions are not routable by bike
-  --   -- use foot profile to check if we can walk, if so
-  --   -- assume we can push our bike.
-  --   -- note that bicycle=no prevents pushing of bikes
-  --   local foot_result = {}
-  --   Handlers.handle_init(way,foot_result,data,foot_profile)
-  --   foot_profile.way_function(way,foot_result)
-  --   Handlers.merge(foot_result,bike_result)
-  -- end
-  Handlers.output(bike_result,result)
-  --result.weight = 1
-  --result.forward_speed = -1
-  --result.backward_speed = -1
-  --result.forward_rate = nil
-  --result.backward_rate = nil
-  --result.is_startpoint = false
+  if not Handlers.both_directions_handled(data,bike_result,profile) then
+    
+    -- one or both directions are not routable by bike.
+    -- can we push our bike instead?
+    -- bicycle=no forbids both riding and pushing bikes. 
+    -- otherwise we use the footprofile to check if we can walk.
+    -- if this is the case we assume we can push the bike.
+    
+    local foot_result = {}
+    
+    -- prepare the result table, ie. set speeds=-1, mode=inaccessible, etc.
+    Handlers.handle_init(way,foot_result,data,foot_profile)
+    
+    -- call the foot profile
+    foot_profile.way_function(way,foot_result)
+    
+    -- merge with bike result
+    Handlers.merge(foot_result,bike_result)
+  end
   
+  -- output
+  Handlers.output(bike_result,result)  
 end
 
 function handle_cycleways(way,result,data,profile)
@@ -293,7 +302,7 @@ function handle_cycleways(way,result,data,profile)
   local common = cycleway and profile.cycleway_tags[cycleway]
   local left = cycleway_left and profile.cycleway_tags[cycleway_left]
   local right = cycleway_right and profile.cycleway_tags[cycleway_right]
-  local speed = profile.speeds.highway["cycleway"]
+  local speed = profile.speeds.highway.cycleway
     
   if cycleway == 'opposite' or cycleway == 'opposite_track' or cycleway == 'opposite_lane' then
     if data.is_reverse_oneway then
@@ -330,8 +339,7 @@ function handle_cycleways(way,result,data,profile)
   end
 end
 
-function bicycle_way_function (data,way,result)
-
+function bicycle_way_function (data,way,result)  
   local handlers = Sequence {
     Handlers.handle_init,
     Handlers.handle_default_mode,
@@ -341,10 +349,9 @@ function bicycle_way_function (data,way,result)
     Handlers.handle_oneway,
     Handlers.handle_roundabouts,
     handle_cycleways,
-    Handlers.handle_ferries,
-    --Handlers.handle_movables,
+    Handlers.handle_routes,
     Handlers.handle_speed,
-    --Handlers.handle_surface,
+    Handlers.handle_surface,
     Handlers.handle_maxspeed,
     Handlers.handle_destinations,
     Handlers.handle_weights
@@ -452,14 +459,13 @@ function bicycle_way_function (data,way,result)
   end
 
   local handlers = Sequence {
-    Handlers.handle_surface,
     Handlers.handle_classification,
     Handlers.handle_roundabouts,
     Handlers.handle_startpoint,
     Handlers.handle_names
   }
 
-  Handlers.run(handlers,way,result,data,profile)  
+  Handlers.run(handlers,way,result,data,profile)
 end
 
 function turn_function(turn)
