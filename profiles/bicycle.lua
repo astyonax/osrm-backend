@@ -12,6 +12,7 @@ local pprint = require('lib/pprint')
 -- load foot profile and change default mode to pushing bike
 local foot_profile = require('foot')
 foot_profile.default_mode = mode.pushing_bike
+foot_profile.routes.train.require_whitelisting = true
 
 -- these need to be global because they are accesed externaly
 properties.max_speed_for_map_matching    = 110/3.6 -- kmph -> m/s
@@ -123,20 +124,12 @@ local profile = {
       service = default_speed,
       track = 12,
       path = 12
-    }
-  },
-  
-  platform_speeds = {
-    platform = walking_speed
-  },
-
-  amenity_speeds = {
-    parking = 10,
-    parking_entrance = 10
-  },
-
-  man_made_speeds = {
-    pier = walking_speed
+    },
+    
+    amenity = {
+      parking = 10,
+      parking_entrance = 10
+    },
   },
 
   routes = {
@@ -148,6 +141,7 @@ local profile = {
     },
     
     train = {
+      require_whitelisting = true,
       keys = { 'route', 'railway' },
       speeds = {
         train = 10,
@@ -160,7 +154,7 @@ local profile = {
     },
     
     default = {
-      keys = { 'route' },
+      keys = { 'bridge' },
       speeds = {
         movable = 5
       }
@@ -269,7 +263,7 @@ function way_function (way, result)
   local bike_result = {}
   bicycle_way_function(data,way,bike_result)
     
-  --pprint(bike_result)
+  pprint(data)
   if not Handlers.both_directions_handled(data,bike_result,profile) then
     
     -- one or both directions are not routable by bike.
@@ -291,7 +285,7 @@ function way_function (way, result)
   end
   
   -- output
-  Handlers.output(bike_result,result)  
+  Handlers.output(bike_result,result)
 end
 
 function handle_cycleways(way,result,data,profile)

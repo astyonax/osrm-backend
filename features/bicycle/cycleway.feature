@@ -75,7 +75,7 @@ Feature: Bike - Cycle tracks/lanes
             | residential | track    | no     |         |         |
             | footway     | track    | no     |         |         |
             | cycleway    | track    | no     |         |         |
-            | motorway    | lane     | yes    | cycling |         |
-            | residential | lane     | yes    | cycling | cycling |
-            | footway     | lane     | yes    | cycling | cycling |
-            | cycleway    | lane     | yes    | cycling | cycling |
+            | motorway    | track    | yes    | cycling |         |
+            | residential | track    | yes    | cycling | cycling |
+            | footway     | track    | yes    | cycling | cycling |
+            | cycleway    | track    | yes    | cycling | cycling |
