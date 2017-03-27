@@ -546,6 +546,11 @@ function Handlers.handle_blocked_ways(way,result,data,profile)
     return false
   end
 
+  -- buildings
+  if profile.avoid.building and data.building == 'yes' then
+    return false
+  end
+
   -- toll roads
   if profile.avoid.toll and way:get_value_by_key("toll") == "yes" then
     return false

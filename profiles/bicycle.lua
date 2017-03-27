@@ -187,6 +187,7 @@ local profile = {
   },
 
   avoid = Set {
+    'building',
     'impassable',
     'construction'
   },
@@ -249,6 +250,7 @@ function way_function (way, result)
   local data = {
     -- prefetch tags
     highway = way:get_value_by_key('highway'),
+    building = way:get_value_by_key('building'),
     bridge = way:get_value_by_key('bridge'),
     route = way:get_value_by_key('route'),
     leisure = way:get_value_by_key('leisure'),
@@ -263,7 +265,6 @@ function way_function (way, result)
   local bike_result = {}
   bicycle_way_function(data,way,bike_result)
     
-  pprint(data)
   if not Handlers.both_directions_handled(data,bike_result,profile) then
     
     -- one or both directions are not routable by bike.
@@ -333,103 +334,7 @@ function handle_cycleways(way,result,data,profile)
   end
 end
 
-function bicycle_way_function (data,way,result)  
-  local handlers = Sequence {
-    Handlers.handle_init,
-    Handlers.handle_default_mode,
-    Handlers.handle_blocked_ways,
-    Handlers.handle_access,
-    Handlers.handle_dismount,
-    Handlers.handle_oneway,
-    Handlers.handle_roundabouts,
-    handle_cycleways,
-    Handlers.handle_routes,
-    Handlers.handle_speed,
-    Handlers.handle_surface,
-    Handlers.handle_maxspeed,
-    Handlers.handle_destinations,
-    Handlers.handle_weights
-  }
-
-  if Handlers.run(handlers,way,result,data,profile) == false then
-    return
-  end
-
-  -- initial routability check, filters out buildings, boundaries, etc
-  local route = way:get_value_by_key("route")
-  local man_made = way:get_value_by_key("man_made")
-  local railway = way:get_value_by_key("railway")
-  local amenity = way:get_value_by_key("amenity")
-  local public_transport = way:get_value_by_key("public_transport")
-  local bridge = way:get_value_by_key("bridge")
-
-  if (not data.highway or data.highway == '') and
-  (not route or route == '') and
-  (not profile.use_public_transport or not railway or railway=='') and
-  (not amenity or amenity=='') and
-  (not man_made or man_made=='') and
-  (not public_transport or public_transport=='') and
-  (not bridge or bridge=='')
-  then
-    return
-  end
-
-
-  -- other tags
-  local barrier = way:get_value_by_key("barrier")
-  local duration = way:get_value_by_key("duration")
-  local service = way:get_value_by_key("service")
-
-
-  -- speed
-  -- local bridge_speed = profile.bridge_speeds[bridge]
-  -- if (bridge_speed and bridge_speed > 0) then
-  --   data.highway = bridge
-  --   if duration and durationIsValid(duration) then
-  --     result.duration = math.max( parseDuration(duration), 1 )
-  --   end
-  --   result.forward_speed = bridge_speed
-  --   result.backward_speed = bridge_speed
-  -- elseif profile.route_speeds[route] then
-  --   -- ferries (doesn't cover routes tagged using relations)
-  --   result.forward_mode = mode.ferry
-  --   result.backward_mode = mode.ferry
-  --   if duration and durationIsValid(duration) then
-  --     result.duration = math.max( 1, parseDuration(duration) )
-  --   else
-  --      result.forward_speed = profile.route_speeds[route]
-  --      result.backward_speed = profile.route_speeds[route]
-  --   end
-  -- -- railway platforms (old tagging scheme)
-  -- elseif railway and profile.platform_speeds[railway] then
-  --   result.forward_speed = profile.platform_speeds[railway]
-  --   result.backward_speed = profile.platform_speeds[railway]
-  -- -- public_transport platforms (new tagging platform)
-  -- elseif public_transport and profile.platform_speeds[public_transport] then
-  --   result.forward_speed = profile.platform_speeds[public_transport]
-  --   result.backward_speed = profile.platform_speeds[public_transport]
-  -- -- railways
-  -- elseif profile.use_public_transport and railway and profile.railway_speeds[railway] and profile.access_tag_whitelist[access] then
-  --   result.forward_mode = mode.train
-  --   result.backward_mode = mode.train
-  --   result.forward_speed = profile.railway_speeds[railway]
-  --   result.backward_speed = profile.railway_speeds[railway]
-  -- elseif amenity and profile.amenity_speeds[amenity] then
-  --   -- parking areas
-  --   result.forward_speed = profile.amenity_speeds[amenity]
-  --   result.backward_speed = profile.amenity_speeds[amenity]
-  -- elseif profile.speeds.highway[data.highway] then
-  --   -- regular ways
-  --   result.forward_speed = profile.speeds.highway[data.highway]
-  --   result.backward_speed = profile.speeds.highway[data.highway]
-  -- elseif access and profile.access_tag_whitelist[access]  then
-  --   -- unknown way, but valid access tag
-  --   result.forward_speed = default_speed
-  --   result.backward_speed = default_speed
-  -- else
-  -- end
-
-  -- convert duration into cyclability
+function handle_safety(way,result,data,profile)
   local is_unsafe = profile.safety_penalty < 1 and profile.unsafe_highway_list[data.highway]
   if result.forward_speed > 0 then
     -- convert from km/h to m/s
@@ -445,20 +350,50 @@ function bicycle_way_function (data,way,result)
       result.backward_rate = result.backward_rate * profile.safety_penalty
     end
   end
+  
   if result.duration > 0 then
     result.weight = result.duration;
     if is_unsafe then
       result.weight = result.weight * (1+profile.safety_penalty)
     end
   end
+end
 
+-- initial routability check
+-- quickly filter out buildings, boundaries, etc. to
+-- increase processing speed
+function handle_routability_check(way,result,data,profile)
+   return data.highway or
+          data.route or
+          data.railway or
+          data.amenity or
+          data.man_made and
+          data.public_transport or
+          data.bridge
+end
+
+function bicycle_way_function (data,way,result)
   local handlers = Sequence {
-    Handlers.handle_classification,
+    Handlers.handle_init,
+    handle_routability_check,
+    Handlers.handle_default_mode,
+    Handlers.handle_blocked_ways,
+    Handlers.handle_access,
+    Handlers.handle_dismount,
+    Handlers.handle_oneway,
     Handlers.handle_roundabouts,
+    handle_cycleways,
+    Handlers.handle_routes,
+    Handlers.handle_speed,
+    Handlers.handle_surface,
+    Handlers.handle_maxspeed,
+    Handlers.handle_destinations,
+    Handlers.handle_weights,
+    handle_safety,
+    Handlers.handle_classification,
     Handlers.handle_startpoint,
     Handlers.handle_names
   }
-
   Handlers.run(handlers,way,result,data,profile)
 end
 

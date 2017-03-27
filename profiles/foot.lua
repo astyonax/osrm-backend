@@ -71,6 +71,7 @@ local profile = {
   },
 
   avoid = Set {
+    'building',
     'impassable',
     'construction'
   },
@@ -201,6 +202,7 @@ function way_function(way, result)
   -- data table for storing intermediate values during processing
   local data = {
     -- prefetch tags
+    building = way:get_value_by_key('building'),
     highway = way:get_value_by_key('highway'),
     bridge = way:get_value_by_key('bridge'),
     route = way:get_value_by_key('route'),

@@ -106,6 +106,7 @@ local profile = {
   },
 
   avoid = Set {
+    'building',
     'area',
     -- 'toll',    -- uncomment this to avoid tolls
     'reversible',
