@@ -510,7 +510,7 @@ function Handlers.handle_oneway(way,result,data,profile)
          oneway == "true" then
     data.is_forward_oneway = true
     result.backward_mode = mode.inaccessible
-  elseif profile.oneway_handling == true then
+  elseif profile.oneway_handling == true or profile.oneway_handling == 'specific' then
     local junction = way:get_value_by_key("junction")
     if data.highway == "motorway" or
        junction == "roundabout" or
